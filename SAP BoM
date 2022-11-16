@@ -1,0 +1,885 @@
+****00_Mapping****
+
+//Mapping MATNR to STKO
+[Map_MATNR_to_STKO]:
+MAPPING LOAD
+	  MANDT
+      &'|'& STLNR
+      &'|'& STLAL
+      							As [%STKO_MAST]
+     , MATNR					As [MAST.MATNR]     
+FROM [lib://ECS-Staging_Root/StagingFinal/MAST.qvd]
+(qvd)
+;
+
+/*
+D	Document Structure
+E	Equipment BOM
+K	Order BOM
+M	Material BOM
+S	Standard BOM
+T	Functional Location BOM
+P	Work Breakdown Structure BOM
+*/
+
+NoConcatenate
+[BoM_Group_Type]:
+LOAD * INLINE [
+STLTY, BoM Group Description
+D,	Document Structure
+E,	Equipment BOM
+K,	Order BOM
+M,	Material BOM
+S,	Standard BOM
+T,	Functional Location BOM
+P,	Work Breakdown Structure BOM
+];
+
+[Map_BoM_Group_Type_to_STKO]:
+MAPPING Load
+	[STLTY]
+    , [BoM Group Description]
+RESIDENT [BoM_Group_Type];
+
+
+/*
+	Loading the Domain Fixed Values for VBTYP
+    
+    Table taken directly fro se80 SAP standard descriptions of SD Document Categories
+*/
+NoConcatenate
+[VBTYP]:
+LOAD * INLINE [
+Value Low,Value High,Description
+A,,Inquiry
+B,,Quotation
+C,,Order
+D,,Item proposal
+E,,Scheduling agreement
+F,,Scheduling agreement with external service agent
+G,,Contract
+H,,Returns
+I,,Order w/o charge
+J,,Delivery
+K,,Credit memo request
+L,,Debit memo request
+M,,Invoice
+N,,Invoice cancellation
+O,,Credit memo
+P,,Debit memo
+Q,,WMS transfer order
+R,,Goods movement
+S,,Credit memo cancellation
+T,,Returns delivery for order
+U,,Pro forma invoice
+V,,Purchase Order
+W,,Independent reqts plan
+X,,Handling unit
+0,,Master contract
+1,,Sales activities (CAS)
+2,,External transaction
+3,,Invoice list
+4,,Credit memo list
+5,,Intercompany invoice
+6,,Intercompany credit memo
+7,,Delivery/shipping notification
+8,,Shipment
+a,,Shipment costs
+b,,CRM Opportunity
+c,,Unverified delivery
+d,,Trading Contract
+e,,Allocation table
+f,,Additional Billing Documents
+g,,Rough Goods Receipt (only IS-Retail)
+h,,Cancel Goods Issue
+i,,Goods receipt
+j,,JIT call
+n,,Reserved
+o,,Reserved
+p,,Goods Movement (Documentation)
+q,,Reserved
+r,,TD Transport (only IS-Oil)
+s,,"Load Confirmation, Reposting (Only IS-Oil)"
+t,,Gain / Loss (Only IS-Oil)
+u,,Reentry into Storage (Only IS-Oil)
+v,,Data Collation (only IS-Oil)
+w,,Reservation (Only IS-Oil)
+x,,"Load Confirmation, Goods Receipt (Only IS-Oil)"
+$,,(AFS)
++,,Accounting Document (Temporary)
+-,,Accounting Document (Temporary)
+#,,Revenue Recognition (Temporary)
+~,,Revenue Cancellation (Temporary)
+§,,Revenue Recognition/New View (Temporary)
+,,Revenue Cancellation/New View (Temporary)
+:,,Service Order
+.,,Service Notification
+&,,Warehouse Document
+*,,Pick Order
+",",,Shipment Document
+^,,Reserved
+|,,Reserved
+k,,Agency Document
+];
+
+[Map_VBTYPT_to_VBTYP]:
+MAPPING Load
+	[Value Low]
+    , [Description]
+RESIDENT [VBTYP];
+
+****10_E_BoM Tables****
+/*
+	BoM tables we need to load
+    
+    STKO - BoM Header
+    STAS - BoM Item
+    STPO - BoM Item
+    STPU - BoM Sub-Item
+    STZU - Group BoM Data?
+    
+    MAST - Material to BoM Link
+    
+*/
+//Lib Connect
+//LIB CONNECT TO 'SapSqlECS';
+
+QUALIFY *;
+
+UNQUALIFY
+	  %STKO
+    , %STAS
+    , %STPO
+    , %STKO_MAST
+
+	, [BoM Group Type Text]
+    , [%BOM_Status]
+    , [%MATNR]
+    , [%BoM_ItemCategory]
+	, [%BoM_MaterialsProvidedIndicator]
+	, [%BoM_SparePartIndicator] 
+	, [%BoM_SalesRelevance]    
+;
+
+//Load STKO
+
+[STKO]:
+LOAD
+	*
+    //PK
+    , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLAL
+      							As [%STKO]
+	//FK
+    , MANDT
+      &'|'& STLNR
+      &'|'& STLAL
+      							As [%STKO_MAST]    
+    //DIms
+	, MANDT
+      &'|'& STLST
+    							As [%BOM_Status]
+                                
+	, ApplyMap('Map_MATNR_to_STKO'
+    	, MANDT
+      	  &'|'& STLNR
+      	  &'|'& STLAL
+        , 'N/A')
+        						As [MATNR] 
+                                
+    , ApplyMap('Map_BoM_Group_Type_to_STKO'
+    	, STLTY
+        , 'N/A')				As [BoM Group Type Text]
+;
+LOAD
+	*                       
+FROM [lib://ECS-Staging_Root/StagingFinal/STKO.qvd]
+(qvd)
+WHERE LKENZ <> 'X'
+	AND LOEKZ <> 'X'
+//     AND MATCH(STLNR, 
+//     		'00009833'
+//             , '00016711'
+//             , '00105600'
+//             )
+
+//WHERE DATUV > MAKEDATE(2022,1,1)
+//	AND STLTY = 'S'
+//	AND STLNR  = '00220935'
+;
+
+//Load STAS
+
+[STAS]:
+LOAD
+	 *
+     , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLAL
+      							As [%STKO]                           
+    , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN
+      							As [%STAS]                             
+;
+LOAD
+	*                   
+FROM [lib://ECS-Staging_Root/StagingFinal/STAS.qvd]
+(qvd)
+WHERE EXISTS(%STKO 
+	  , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLAL)
+;
+
+//Load STPO
+
+[STPO]:
+Load
+	*
+    , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN
+      							As [%STAS]      
+    , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN
+      &'|'& STPOZ
+      							As [%STPO]
+	//FK
+    //Dims
+	, MANDT
+      &'|'& POSTP
+    							As [%BoM_ItemCategory]
+	, MANDT
+      &'|'& BEIKZ
+    							As [%BoM_MaterialsProvidedIndicator]
+	, MANDT
+      &'|'& ERSKZ
+    							As [%BoM_SparePartIndicator]
+	, MANDT
+      &'|'& RVREL
+    							As [%BoM_SalesRelevance]            
+;
+LOAD
+	*                               
+FROM [lib://ECS-Staging_Root/StagingFinal/STPO.qvd]
+(qvd)
+WHERE EXISTS(%STAS
+	  , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN)
+;
+
+//Load STPO
+
+[STPU]:
+LOAD
+	*
+    , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN
+      &'|'& STPOZ
+      							As [%STPO]     
+;
+LOAD
+	*                                  
+FROM [lib://ECS-Staging_Root/StagingFinal/STPU.qvd]
+(qvd)
+WHERE EXISTS(%STPO
+	  , MANDT
+      &'|'& STLTY
+      &'|'& STLNR
+      &'|'& STLKN
+      &'|'& STPOZ)
+;
+
+/*
+
+Might be useful
+*/
+
+// [STPF]:
+// Load
+// 	*
+//     , MANDT
+//       &'|'& STLTY_W
+//       &'|'& STLNR_W
+//       &'|'& STLAL_W
+//       						As [%STKO]
+// ;
+// LOAD
+//     MANDT,
+//     STLTY_W,
+//     STLNR_W,
+//     STLAL_W,
+//     KANTE_K,
+//     STLTY,
+//     STLNR,
+//     STLAL,
+//     STVKN,
+//     KANTE_V
+// FROM [lib://ECS-Staging_Root/StagingFinal/STPF.qvd]
+// (qvd)
+// WHERE EXISTS(%STAS
+// 	 , MANDT
+//       &'|'& STLTY_W
+//       &'|'& STLNR_W
+//       &'|'& STLAL_W)
+// ;
+
+****10_E_MAST & MBEW****
+
+//Unqualify
+UNQUALIFY
+	  %STKO_MAST
+    , %MARC
+    , %MBEW
+    , %MATNR
+    , %BOM_Usage
+    , %ValuationClass
+;
+
+
+//MAST - MAterial # BoM
+[MAST]:
+LOAD
+	*
+    , MANDT
+      &'|'& STLNR
+      &'|'& STLAL
+      							As [%STKO_MAST]
+    , MANDT
+      &'|'& MATNR
+      &'|'& WERKS
+      							As [%MARC]
+	, MANDT
+      &'|'& STLAN
+    							As [%BOM_Usage]
+     , MANDT
+      &'|'& MATNR
+      							As [%MATNR]
+;
+LOAD
+	*                                  
+FROM [lib://ECS-Staging_Root/StagingFinal/MAST.qvd]
+(qvd)
+WHERE EXISTS(%STKO_MAST
+    , MANDT
+      &'|'& STLNR
+      &'|'& STLAL)
+;
+
+//MBEW
+[MBEW]:
+LOAD
+	*
+    , MANDT
+    &'|'& MATNR
+    &'|'& BWKEY
+    &'|'& BWTAR
+    							As [%MBEW]
+     , MANDT
+      &'|'& MATNR
+      							As [%MATNR]
+	//Dims
+    , MANDT
+      &'|'& BKLAS
+    							As [%ValuationClass]
+                                
+                                //Valuation Type Text ? T710GT ???
+;
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/MBEW.qvd]
+(qvd)
+WHERE EXISTS(%MATNR
+	  , MANDT
+      &'|'& MATNR)
+;
+
+10_E_MARA
+Unqualify
+	%MaterialType
+    , %IndustrySector
+    , %MaterialGroup
+;
+
+[MARA]:
+LOAD
+	*
+    , MANDT
+      &'|'& MATNR
+      					As [%MATNR]
+	, MANDT
+    &'|'& MTART
+    					As [%MaterialType]	
+	, MANDT
+    &'|'& MBRSH
+    					As [%IndustrySector]
+	, MANDT
+    &'|'& MATKL
+    					As [%MaterialGroup]                                
+    
+FROM [lib://ECS-Staging_Root/StagingFinal/MARA.qvd]
+(qvd);
+
+****10_E_BoM Dims****
+//Connect to SAP
+LIB CONNECT TO 'SapSqlECS';
+
+//T413T  - BoM Spare Part Indicator Text
+LOAD
+	MANDT
+    &'|'& ERSKZ
+    					As [%BoM_SparePartIndicator]
+    , ETEXT 			As [BoM Spare Part Indicator Text]
+;
+SQL SELECT
+	*
+FROM T413T
+WHERE SPRAS = 'E'
+;
+
+//T415T  - BoM Status
+LOAD
+	MANDT
+    &'|'& STLST
+    					As [%BOM_Status]
+    , STTXT 			As [BoM Status Text]
+;
+SQL SELECT
+	*
+FROM T415T
+WHERE SPRAS = 'E'
+;
+
+//T416T  - BoM Usage
+LOAD
+	MANDT
+    &'|'& STLAN
+    					As [%BOM_Usage]
+    , ANTXT 			As [BoM Usage Text]
+;
+SQL SELECT
+	*
+FROM T416T
+WHERE SPRAS = 'E'
+;
+
+//T417T  - BoM Item Category
+LOAD
+	  MANDT
+      &'|'& BEIKZ
+    					As [%BoM_MaterialsProvidedIndicator]  
+    , BTEXT 			As [BoM Materials Provided Indicator Text]
+;
+SQL SELECT
+	*
+FROM T417T
+WHERE SPRAS = 'E'
+;
+
+//T418T  - BoM Item Category
+LOAD
+	MANDT
+    &'|'& POSTP
+    					As [%BoM_ItemCategory]
+    , PTEXT 			As [BoM Item Category Text]
+;
+SQL SELECT
+	*
+FROM T418T
+WHERE SPRAS = 'E'
+;
+
+
+//TVRLT  -Relevance of BoM Item for SD Table
+LOAD
+	MANDT
+    &'|'& RVREL
+    					As [%BoM_SalesRelevance]
+    , BEZEI 			As [Sales Relevance Text]
+;
+SQL SELECT
+	*
+FROM TVRLT
+WHERE SPRAS = 'E'
+;
+
+//T024  - Purchase Group
+LOAD
+	MANDT
+    &'|'& EKGRP
+    					As [%PurchaseGroup]
+    , EKNAM 			As [Pruchase Group Names]
+;
+SQL SELECT
+	*
+FROM T024
+;
+
+//T025  - Valuation Class
+LOAD
+	MANDT
+    &'|'& BKLAS
+    					As [%ValuationClass]
+    , BKBEZ 			As [Valuation Class Text]
+;
+SQL SELECT
+	*
+FROM T025T
+WHERE SPRAS = 'E'
+;
+
+//MAKT - MAterial Name
+[MAKT]:
+LOAD
+      MANDT
+      &'|'& MATNR
+      							As [%MATNR]
+      , MAKTX
+WHERE SPRAS = 'E'
+;
+LOAD
+	*                                  
+FROM [lib://ECS-Staging_Root/StagingFinal/MAKT.qvd]
+(qvd)
+WHERE EXISTS(%MATNR
+      , MANDT
+      &'|'& MATNR
+ 	  )
+;
+
+//MARC - Plant Data for Material Table
+[MARC]:
+LOAD
+	*
+    , MANDT
+      &'|'& MATNR
+      &'|'& WERKS
+      							As [%MARC]     
+;
+LOAD
+	*                                  
+FROM [lib://ECS-Staging_Root/StagingFinal/MARC.qvd]
+(qvd)
+WHERE EXISTS(%MARC
+      , MANDT
+      &'|'& MATNR
+      &'|'& WERKS)
+;
+
+//************************************************
+/*
+	Materials Dims
+*/
+//T134T  - Material Type
+LOAD
+	MANDT
+    &'|'& MTART
+    					As [%MaterialType]
+    , MTBEZ 			As [Material Type Text]
+WHERE EXISTS([%MaterialType]
+	,MANDT
+    &'|'& MTART)
+;
+SQL SELECT
+	*
+FROM T134T
+WHERE SPRAS = 'E'
+;
+
+//T137T
+LOAD
+	MANDT
+    &'|'& MBRSH
+    					As [%IndustrySector]
+    , MBBEZ 			As [Industry Sector Text]
+WHERE EXISTS([%IndustrySector]
+	,MANDT
+    &'|'& MBRSH)
+;
+SQL SELECT
+	*
+FROM T137T
+WHERE SPRAS = 'E'
+;
+
+//T023T
+LOAD
+	MANDT
+    &'|'& MATKL
+    					As [%MaterialGroup]
+    , WGBEZ 			As [Material Group Text]
+WHERE EXISTS([%MaterialGroup]
+	,MANDT
+    &'|'& MATKL)
+;
+SQL SELECT
+	*
+FROM T023T
+WHERE SPRAS = 'E'
+;
+
+****30_T_Hierarchy****
+/*
+	Create Hierarchy Table:
+
+	We want it pretty simple
+    
+    //We need 3 columns in the final table
+    
+*/
+
+/*
+	STEPS
+	1. Identify the Header Materials which are the highest level of BoM. 
+    	- Make these Materials Nodes
+        - Assign them a ParentID = NULL()
+    2. Create table with %ParentID, %NodeID, and NodeName (Material #)
+    	- Concatenate STKO filtered to highest level to STKO
+        - Join STPO to STKO table
+    3. Load the final table and perform Hierarchy Load
+    	- Cleanup and do Hierarchy Load
+*/
+
+
+UNQUALIFY *;
+
+//CHeck in Items table if Material is an item. WHERE NOT EXISTS Material in ITEM table, it is the highest level of hierarchy.
+
+// [Filter_Finished_Materials]:
+// LOAD
+// 	MARA.MATNR	As [Filter_MATNR]
+// RESIDENT MARA
+// WHERE MARA.MTART = 'FERT';
+
+
+// LOAD
+// 	STKO.MATNR	As [Filter_MATNR]
+//     , STKO
+// RESIDENT STKO;
+
+
+/*
+First Commented Section
+// NoConcatenate
+// [Filter_STKO_to_Only_Top_Level_Products]:
+// LOAD
+// 	STPO.MANDT
+//     &'|'& STPO.STLTY
+//     &'|'& STPO.IDNRK				//Node Name - Item Material #
+//     				As %NodeID
+// RESIDENT STPO;
+
+// //Load STKO as Nodes with no Parent if they are highest level in hierarchy.
+// NoConcatenate
+// List_Highest_Level_BoM_Materials:
+// LOAD
+// 	%STKO
+//     , NULL()		As %ParentID
+// 	, STKO.MANDT
+//     &'|'& STKO.STLTY
+//     &'|'& STKO.MATNR
+//     				As %NodeID
+// 	, STKO.MATNR	As NodeName
+// RESIDENT STKO
+// WHERE NOT EXISTS(%NodeID
+// 			, STKO.MANDT
+//     		  &'|'& STKO.STLTY
+//     		  &'|'& STKO.MATNR)
+// ;
+
+// DROP TABLE Filter_STKO_to_Only_Top_Level_Products;
+*/
+
+
+//Load STKO as Nodes with no Parent if they are highest level in hierarchy.
+NoConcatenate
+List_Highest_Level_BoM_Materials:
+LOAD
+	%STKO
+    , NULL()		As %ParentID
+	, STKO.MANDT
+    &'|'& STKO.STLTY
+    &'|'& STKO.MATNR
+    				As %NodeID
+	, STKO.MATNR	As NodeName
+RESIDENT STKO
+// WHERE EXISTS(Filter_MATNR
+// 			, STKO.MATNR)
+;
+
+//DROP TABLE Filter_STKO_to_Only_Top_Level_Products;
+
+
+// DROP TABLE STKO;
+// DROP TABLE STPO;
+// DROP TABLE STAS;
+// DROP TABLE MAST;
+// DROP TABLE MBEW;
+
+
+// EXIT SCRIPT;
+
+//Create the Table for Hierarchy
+// %ParentID, %NodeID, NodeName (Material #)
+NoConcatenate
+H_Prep:
+LOAD
+	%STKO
+	, STKO.MANDT
+    &'|'& STKO.STLTY
+    &'|'& STKO.MATNR
+    				As %ParentID
+RESIDENT STKO
+// WHERE EXISTS(Filter_MATNR
+// 			, STKO.MATNR)
+;
+
+//DROP TABLE Filter_Finished_Materials;
+
+//DROP TABLE STKO;
+
+//JOIN STAS
+LEFT JOIN(H_Prep)
+LOAD
+	 %STKO
+    , %STAS
+RESIDENT STAS
+WHERE EXISTS(%STKO)
+;
+
+DROP TABLE STAS;
+
+//JOIN STPO
+LEFT JOIN(H_Prep)
+LOAD
+	%STAS
+    , %STPO
+    , STPO.MANDT
+    &'|'& STPO.STLTY
+    &'|'& STPO.IDNRK				//Node Name - Item Material #
+    				As %NodeID
+	, STPO.IDNRK	As NodeName
+RESIDENT STPO
+WHERE EXISTS(%STAS)
+;
+
+//DROP TABLE STPO;
+
+//Add the top of BoM Hierarchy null() Parent Nodes
+Concatenate(H_Prep)
+LOAD
+	  %STKO
+    , %ParentID
+	, %NodeID
+    , NodeName
+RESIDENT List_Highest_Level_BoM_Materials
+;
+
+DROP TABLE List_Highest_Level_BoM_Materials;
+
+
+//Cleanup fields we don't need.
+
+DROP FIELDS
+	  %STAS
+    , %STKO
+    , %STPO
+;
+
+// DROP TABLE H_Prep;
+
+//AutoNumber all the keys. Can't Use Text for Hierarchy Laod
+AutoNumber '%*';
+
+//TEmporary
+//DROP TABLE STPU;
+
+NoConcatenate
+[BoM_HierarchyBelongsTo]:
+//HierarchyBelongsTo(NodeID, ParentID, NodeMaterialName, 'AncestorID','AncestorName','DepthDiff')//,/ParentMaterialName)
+HierarchyBelongsTo(%NodeID, %ParentID, NodeName,'AncestorID', 'AncestorName', 'DepthDiff')
+//Hierarchy(%NodeID, %ParentID, NodeName)
+//Load the Mandatory Fields
+LOAD
+	*
+RESIDENT H_Prep;
+
+
+// NoConcatenate
+// [BoM_Hierarchy]:
+// //HierarchyBelongsTo(NodeID, ParentID, NodeMaterialName, 'AncestorID','AncestorName','DepthDiff')//,/ParentMaterialName)
+// //HierarchyBelongsTo(%NodeID, %ParentID, NodeName,'AncestorID', 'AncestorName')
+// Hierarchy(%NodeID, %ParentID, NodeName)
+// //Load the Mandatory Fields
+// LOAD
+// 	*
+// RESIDENT H_Prep;
+
+DROP TABLE H_Prep;
+
+// NoConcatenate
+// [BoM Hierarchy Alias]:
+// LOAD 
+// 	%NodeID			As BoM.%NodeID
+//     , %ParentID		As BoM.%ParentID
+//     , NodeName		As BoM.NodeName
+// RESIDENT BoM_HierarchyBelongsTo;
+
+// DROP TABLE [BoM_HierarchyBelongsTo];
+
+// Hierarchy (%NodeID, %ParentID, NodeName)
+
+//    Load *,
+
+//        Subfield( Path, '/', Level ) as Parent;
+
+//    Load *,
+
+//        Left( Peek( Path ), Index( Peek( Path ) & '/', '/', Level ) -1 ) & '/' & %NodeID as Path
+
+//        While IterNo() <= Units;
+
+//    Load *,
+
+//        If( Frac( Quantity)=0, Quantity, 1 ) as Units,
+
+//        If( Frac( Quantity)=0, 1, Quantity ) as Amount
+
+//        RESIDENT H_Prep ;
+
+//  DROP TABLE H_Prep;
+ 
+
+EXIT SCRIPT;
+
+/*
+RANDOM DROP TABLES SCRIPT
+
+
+//Table to not drop
+// SET vTableName = H_Prep;
+
+// LET vTableException = TableName(H_Prep);
+
+// LET vNumTables = NoOfTables();
+
+// FOR vTableNum = $(vNumTables) - 1 to 0 step -1 ;
+
+
+// FOR EACH 
+// DROP TABLES;
+
+*/

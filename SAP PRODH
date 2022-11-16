@@ -1,0 +1,133 @@
+/**********************************************************************************************************************************************************
+	Creates the Product Hierarchy
+
+*/
+/**********************************************************************************************************************************************************/
+//Lib Connect
+//LIB CONNECT TO 'SapSqlECS';
+
+/**********************************************************************************************************************************************************
+	1. Write the list of SAP clients you want to create hierarchies for.
+*/
+[SAP_Client_List]:
+LOAD * INLINE [
+MANDT
+020
+];
+
+/**********************************************************************************************************************************************************
+	2. Begin Loop to create Hierarchies
+*/
+FOR EACH i in FieldValueList('MANDT')
+
+/*
+	--Load from SAP--
+*/
+//Load Product Hierarchy
+[ProductHierarchy]:
+LOAD
+      MANDT &'|'& PRODH As [%T179]
+    , MANDT
+    , PRODH
+    , STUFE
+;
+SQL SELECT
+	*
+FROM T179
+CLIENT SPECIFIED
+WHERE MANDT = '$(i)'
+;
+
+//Load Product Hierarchy Text
+LEFT JOIN(ProductHierarchy)
+LOAD
+	MANDT &'|'& PRODH As [%T179]
+//     ,  MANDT
+//     , PRODH
+    , VTEXT
+;
+SQL SELECT
+	*
+FROM T179T
+CLIENT SPECIFIED
+WHERE SPRAS = 'E'
+	AND MANDT = '$(i)'
+;
+
+//Drop our join predicate
+DROP FIELD [%T179];
+
+/**********************************************************************************************************************************************************
+	3. Prepare data for Qlik Hierarchy laod with transformation
+*/
+/*
+	--Transform data so that it is ready for hierarchy load.--
+    1. Set a variable to take all charchters left of the right most 2 charachters = The Parent Node ID
+    2. If the Parent Node ID is only one charachter than it is the root node --> Make this null()
+    3. Alias fields appropriately
+*/
+SET vParentID = NUM#(LEFT(PRODH,LEN(PRODH)-2),'#');
+
+NoConcatenate
+[T_Setup_Product_Hierarhcy_Nodes]:
+LOAD
+	  MANDT&'|'&PRODH			As [%ProductHierarchy]		//NodeID -- Added MANDT so that the hierarchy key is correct.
+    , NUM#(PRODH,'#')			As [NodeID]					//NodeID, Convert to number. Hierarchy load only works with NUM() not TEXT()  
+    , IF(LEN($(vParentID))>0
+    	, $(vParentID)
+        , NULL()
+        )						As [ParentID]				//ParentID
+//    , STUFE												//Level is not needed		
+//    , IF(
+    , NUM#(RIGHT(PRODH,2),'#')					
+    &'|'& 
+    VTEXT						As [ProductHierarchy]		//NodeName + //The # of the Prod Hierarchy (id)
+RESIDENT ProductHierarchy;
+
+DROP TABLE ProductHierarchy;
+
+/**********************************************************************************************************************************************************
+	4. Complete Hierachy Load
+*/
+NoConcatenate
+[Hierarchy_ProductHierarchy]:
+Hierarchy(NodeID, ParentID, ProductHierarchy, 'ParentName', ProductHierarchy, 'Path', '\', 'Depth')
+LOAD
+	*
+RESIDENT [T_Setup_Product_Hierarhcy_Nodes];
+
+DROP TABLE [T_Setup_Product_Hierarhcy_Nodes];
+
+/**********************************************************************************************************************************************************
+	5. Rename the new HierarchyLevels appropriately.
+*/
+[PrdouctHierarchy]:
+LOAD
+	  [%ProductHierarchy]									//Key
+    , SubField(ProductHierarchy, '|',2)			As [Product Hierarchy]		//Corp IT names in comments
+	, SubField(ProductHierarchy1, '|',2)			As [Industries]				//Domain
+    , SubField(ProductHierarchy2, '|',2)			As [Product Line]			//Family
+    , SubField(ProductHierarchy3, '|',2)			As [Product Line2]			//Line
+    , SubField(ProductHierarchy4, '|',2)			As [Product Model]			//Model
+    , SubField(ProductHierarchy, '|',1)			As [ID Product Hierarchy]		//Corp IT names in comments
+    , SubField(ProductHierarchy1, '|',1)			As [ID Industries]				//Domain
+	, SubField(ProductHierarchy2, '|',1)			As [ID Product Line]			//Family
+	, SubField(ProductHierarchy3, '|',1)			As [ID Product Line2]			//Line
+	, SubField(ProductHierarchy4, '|',1)			As [ID Product Model]			//Model
+
+RESIDENT Hierarchy_ProductHierarchy;
+
+DROP TABLE Hierarchy_ProductHierarchy;
+/**********************************************************************************************************************************************************
+	6. Store the Table. Do next in loop
+*/
+
+//Store Into QVD
+STORE [PrdouctHierarchy] INTO [lib://ECS-Staging_Root (staublipri_e0ahug)/StagingFinal/ProductHierarchy_$(i).qvd] (qvd);
+
+Next i
+
+DROP TABLE [SAP_Client_List];
+
+/**********************************************************************************************************************************************************
+*/

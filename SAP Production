@@ -1,0 +1,571 @@
+****00_Mapping****
+/********************************************************************************************************************************
+	Mapping Order Types
+*/
+
+
+/*
+	Loading the Domain Fixed Values for AUFTYP
+    
+    Table taken directly fro se80 SAP standard descriptions
+*/
+
+NoConcatenate
+[AUFTYP]:
+LOAD * INLINE [
+Value Low,Value High,Description
+01,,Internal Order (Controlling)
+02,,Accrual Calculation Order (Controlling)
+03,,Model Order (Controlling)
+04,,CO Production Order
+05,,Product Cost Collector
+06,,QM Order
+10,,PP Production Order
+20,,Network
+30,,Maintenance order
+40,,Process Order
+50,,Inspection Lot
+60,,Personnel Order
+70,,Shipping deadlines
+];
+
+[Map_AUFTYPT_to_AUFTYP]:
+MAPPING 
+LOAD
+	*
+;
+Load
+	TEXT([Value Low])	As [AUFTYP]	//Convert to text
+    , [Description]
+RESIDENT [AUFTYP];
+
+//DROP TABLE AUFTYP;
+
+
+//Connect to SAP
+LIB CONNECT TO 'SapSqlECS';
+
+
+//T003P - to - AUFK
+[Map_AUARTT_to_AUART]:
+Mapping LOAD
+//MANDT &'|'& AUART	As [%OrderType]
+    AUART				As [%OrderType]
+    , TXT				As [Order Type Name]
+;
+SQL SELECT
+	*
+FROM T003P
+WHERE SPRAS IN ('E')//,'D')		//Doing this because potentially missing english values
+//ORDER BY SPRAS DESCENDING		//This didn't help they are just missing descriptions
+;
+
+/********************************************************************************************************************************
+	Mapping for MBEW to AFKO for Currencies
+*/
+//Map Plant# from AFUK - to - AFKO
+[Map_Plant#_to_AFKO]:
+MAPPING LOAD
+    //Dims
+       MANDT &'|'& AUFNR 	As %AUFK_Order
+     , MANDT &'|'& WERKS 	As Plant#
+FROM [lib://ECS-Staging_Root/StagingFinal/AUFK.qvd]
+(qvd)
+;
+
+//Map Plant# from AFUK - to - AFKO
+[Map_WAERS_to_AFKO]:
+MAPPING LOAD
+    //Dims
+       MANDT &'|'& AUFNR 	As %AUFK_Order
+     , WAERS
+FROM [lib://ECS-Staging_Root/StagingFinal/AUFK.qvd]
+(qvd)
+;
+
+//T001W - Plant
+[Map_BWKEY_to_AFKO]:
+MAPPING LOAD
+     MANDT &'|'& WERKS 			As [Plant#]
+     , BWKEY					As [BWKEY]			//Valuation Area
+FROM  [lib://ECS-Staging_Root/StagingFinal/T001W.QVD](qvd)
+;
+**** QUALIFY ****
+QUALIFY *;
+
+****10_E_Orders****
+/*
+	Load the Orders Tables
+    AUFK - Order Master Data
+    AFKO - Order Header Data PP Orders
+    AFPO - Order Item
+    AUFM - Order Data Goods Movement
+    AFRU - Order Confirmations
+    AFVV - DB Structure of Quantities/Dates/Values in operation table
+    AFVC - Operation within an order, Table and data
+*/
+
+UNQUALIFY
+	  %AUFK_Order
+    , %AFPO_OrderItem
+    , %AUFM
+    , %Date
+    , %AFVV
+    , Plant#
+    , %MATNR
+;
+
+//Order Master Data
+//Note: Probably will be filtering on this table based on Order Category and Order Types...
+[AUFK]:
+LOAD
+	*
+    //PK
+    , MANDT &'|'& AUFNR 		As %AUFK_Order
+    //Dims
+    , MANDT &'|'& BUKRS			As [#CompanyCode]
+    //Date
+//    , PDAT1						As %Date			//Planned Release Date
+    //Mapping
+    , ApplyMap('Map_AUFTYPT_to_AUFTYP'
+    		, AUTYP
+            , 'N/A')			As [Order Category Text]  
+    , ApplyMap('Map_AUARTT_to_AUART'
+    		, AUART
+            , 'N/A')			As [Order Type Text]
+;    
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/AUFK.qvd]
+(qvd)
+;
+
+//Order Header
+[AFKO]:
+LOAD
+	*
+    , ApplyMap('Map_BWKEY_to_AFKO'
+    		, [Plant#]
+            , 'N/A')			As BWKEY			//Map BWKEY on Plant in second step
+;    
+LOAD
+	*
+    //PK
+    , MANDT &'|'& AUFNR  		As %AUFK_Order
+    //FK
+    , MANDT &'|'& PLNBEZ 		As %MATNR
+    //Date
+    , GLTRP				 		As %Date			//Basic finish date
+    
+    //Mappings
+    , ApplyMap('Map_Plant#_to_AFKO'
+    		, MANDT &'|'& AUFNR
+            , 'N/A')	 		As Plant#			//Map Plant# to Order
+	, ApplyMap('Map_WAERS_to_AFKO'
+    		, MANDT &'|'& AUFNR
+            , 'N/A')			As WAERS       		//Map Order Currency to Order Header     
+;    
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/AFKO.qvd]
+(qvd)
+WHERE EXISTS(%AUFK_Order
+			, MANDT &'|'& AUFNR)
+;
+
+//Order Line Item
+[AFPO]:
+LOAD
+	*
+    , MANDT &'|'& AUFNR 		As %AUFK_Order
+    , MANDT 
+      &'|'& AUFNR
+      &'|'& POSNR 				As %AFPO_OrderItem
+//	, ETRMP						As %Date //Opening date of planned order
+//    , STRMP //Start date of the planned order
+;    
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/AFPO.qvd]
+(qvd)
+WHERE EXISTS(%AUFK_Order
+			, MANDT &'|'& AUFNR)
+;
+
+//Order Goods Movements
+[AUFM]:
+LOAD
+	*
+    , MANDT &'|'& AUFNR As %AUFK_Order
+    , MANDT 
+      &'|'& MBLNR
+      &'|'& MJAHR
+      &'|'& ZEILE 		As %AUFM
+//    , BLDAT				As %Date	//Date in doc
+;    
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/AUFM.qvd]
+(qvd)
+WHERE EXISTS(%AUFK_Order
+			, MANDT &'|'& AUFNR)
+;
+
+// //Order COnfirmations
+// [AFRU]:
+// LOAD
+// 	*
+//     , MANDT 
+//       &'|'& RUECK					//Completion confirmation # for the operation
+//       &'|'& RMZHL					//Confirmation #
+//       			 		As %AFRU  
+//     , BUDAT				As %Date	//Posting Date
+// ;    
+// LOAD
+// 	*
+// FROM [lib://ECS-Staging_Root/StagingFinal/AFRU.qvd]
+// (qvd)
+// ;      
+
+// DROP FIELD %Date;
+
+// EXIT SCRIPT;
+
+// [AFVV]:
+// LOAD
+// 	*
+//     , MANDT 
+//       &'|'& AUFPL					//Routing # of operations in the Order
+//       &'|'& APLZL					//General Counter for Order
+// 						As %AFVV
+// //     , MANDT 
+// //       &'|'& AUFPL					//Routing # of operations in the Order
+// //       &'|'& APLZL					//General Counter for Order
+// //       &'|'& AUFNR					//Order #
+// //       &'|'& WERK					//Plant
+// //       &'|'& ARBID					//Work ID
+// // 						As [%AFVC]
+// ;    
+// LOAD
+// 	*
+// FROM [lib://ECS-Staging_Root/StagingFinal/AFVV.qvd]
+// (qvd);
+
+
+// [AFVC]:
+// LOAD
+// 	*
+//     , MANDT 
+//       &'|'& AUFPL
+//       &'|'& APLZL
+// 						As [%AFVV]
+                        
+//                         //Only Exists in Qlikview
+// //     , MANDT 
+// //       &'|'& AUFPL					//Routing # of operations in the Order
+// //       &'|'& APLZL					//General Counter for Order
+// //       &'|'& AUFNR					//Order #
+// //       &'|'& WERK					//Plant
+// //       &'|'& ARBID					//Work ID
+// // 						As [%AFVC]                        
+// ;    
+// LOAD
+// 	*
+// FROM [lib://ECS-Staging_Root/StagingFinal/AFVC.qvd]
+// (qvd);
+
+****10_E_MBEW+100W****
+//Unqualify
+UNQUALIFY
+	%MBEW_AFKO
+    , %MBEW
+    , %ValuationClass
+;
+
+
+//MBEW
+[MBEW]:
+LOAD
+	*
+    , MANDT
+    &'|'& MATNR
+    &'|'& BWKEY
+    &'|'& BWTAR
+    							As [%MBEW]
+        , MANDT
+    &'|'& MATNR
+    &'|'& BWKEY
+    							As [%MBEW_AFKO]
+//      , MANDT
+//       &'|'& MATNR
+//       							As [%MATNR]	//Not needed we use key MBEW_AFKO
+	//Dims
+    , MANDT
+      &'|'& BKLAS
+    							As [%ValuationClass]
+                                
+                                //Valuation Type Text ? T710GT ???
+;
+LOAD
+	*
+FROM [lib://ECS-Staging_Root/StagingFinal/MBEW.qvd]
+(qvd)
+WHERE EXISTS(%MATNR
+	  , MANDT
+      &'|'& MATNR)
+;
+
+//Unqualify *
+UNQUALIFY *;
+
+
+//T001W - Plant
+LOAD
+     MANDT &'|'& WERKS 			As [Plant#]
+     , [NAME1]					As [Plant Name]
+FROM  [lib://ECS-Staging_Root/StagingFinal/T001W.QVD](qvd)
+	WHERE EXISTS([Plant#], MANDT &'|'& WERKS)
+;
+
+/*
+	Apply MBEW Prices to AFKO Orders
+    - Key is on 
+*/
+
+NoConcatenate
+[AddKey_%MBEW_AFKO_to_AFKO]:
+LOAD
+	*
+    , AFKO.MANDT
+    &'|'& AFKO.PLNBEZ				//Material #
+    &'|'& AFKO.BWKEY				//Valuation Area #
+    							As [%MBEW_AFKO]
+RESIDENT AFKO;                                
+
+//Cleanup
+DROP TABLE AFKO;
+RENAME TABLE AddKey_%MBEW_AFKO_to_AFKO TO AFKO;
+
+
+// //End Script section
+
+// DROP FIELD %Date;
+
+// EXIT SCRIPT;
+
+****E_T001 Dims****
+/*
+	Plant Table
+*/
+
+[T001]:
+LOAD
+      MANDT &'|'& BUKRS			As [#CompanyCode]
+	, BUTXT						As [Company Name]
+    , ADRNR						As [Company Address]
+    , LAND1						As [Company Land]
+FROM  [lib://ECS-Staging_Root/StagingFinal/T001.QVD](qvd)
+;
+
+
+[T001K]:
+LOAD
+      MANDT &'|'& BUKRS			As [#CompanyCode]
+    , MANDT &'|'& BWKEY			As [#ValuationArea]
+FROM  [lib://ECS-Staging_Root/StagingFinal/T001K.QVD](qvd)
+;
+
+****10_E_MARA****
+QUALIFY *;
+
+Unqualify
+	%MATNR
+    , %ProductHierarchy
+    , %MaterialType
+    , %IndustrySector
+    , %MaterialGroup
+;
+
+[MARA]:
+LOAD
+	*
+    , MANDT
+      &'|'& MATNR
+      					As [%MATNR]
+	, MANDT
+    &'|'& MTART
+    					As [%MaterialType]	
+	, MANDT
+    &'|'& MBRSH
+    					As [%IndustrySector]
+	, MANDT
+    &'|'& MATKL
+    					As [%MaterialGroup]
+	, MANDT
+    &'|'& PRDHA			As [%ProductHierarchy]
+    
+FROM [lib://ECS-Staging_Root/StagingFinal/MARA.qvd]
+(qvd)
+WHERE EXISTS(%MATNR
+	  , MANDT
+      &'|'& MATNR)
+;
+
+UNQUALIFY *;
+
+****10_E_MARA_Dims****
+//************************************************
+/*
+	Materials Dims
+*/
+
+//MAKT - MAterial Name
+[MAKT]:
+LOAD
+      MANDT
+      &'|'& MATNR
+      							As [%MATNR]
+      , MAKTX					As [Material Name]
+WHERE SPRAS = 'E'
+;
+LOAD
+	*                                  
+FROM [lib://ECS-Staging_Root/StagingFinal/MAKT.qvd]
+(qvd)
+WHERE EXISTS(%MATNR
+      , MANDT
+      &'|'& MATNR
+ 	  )
+;
+
+//T134T  - Material Type
+LOAD
+	MANDT
+    &'|'& MTART
+    					As [%MaterialType]
+    , MTBEZ 			As [Material Type Text]
+WHERE EXISTS([%MaterialType]
+	,MANDT
+    &'|'& MTART)
+;
+SQL SELECT
+	*
+FROM T134T
+WHERE SPRAS = 'E'
+;
+
+//T137T
+LOAD
+	MANDT
+    &'|'& MBRSH
+    					As [%IndustrySector]
+    , MBBEZ 			As [Industry Sector Text]
+WHERE EXISTS([%IndustrySector]
+	,MANDT
+    &'|'& MBRSH)
+;
+SQL SELECT
+	*
+FROM T137T
+WHERE SPRAS = 'E'
+;
+
+//T023T
+LOAD
+	MANDT
+    &'|'& MATKL
+    					As [%MaterialGroup]
+    , WGBEZ 			As [Material Group Text]
+WHERE EXISTS([%MaterialGroup]
+	,MANDT
+    &'|'& MATKL)
+;
+SQL SELECT
+	*
+FROM T023T
+WHERE SPRAS = 'E'
+;
+
+****10_E_ProdH****
+//LOad Product Hierarchy
+[Product Hierarchy]:
+LOAD
+*
+FROM [lib://ECS-Staging_Root/StagingFinal/ProductHierarchy_020.qvd] (qvd);
+
+****Calendar****
+/*
+	Invoice Billing Date Calendar
+/*
+	Calendars for :
+	Invoice Billing Date
+*/
+NoConcatenate
+[CalendarFields]:
+LOAD * INLINE [
+CalendarFields
+%Date
+]
+;
+//VBRK.FKDAT
+
+FOR EACH i in FieldValueList('CalendarFields')
+
+	SET vCalendarField = $(i);
+    
+    [Calendar $(vCalendarField)]:
+    LOAD
+    	*
+        //CYTD & PYTD
+    	, If([$(vCalendarField)]>=(YearStart(Today(),0)) AND [$(vCalendarField)] <= Today(), 1, 0) 						as [$(vCalendarField) IsCYTD]
+    	, If([$(vCalendarField)]>=(YearStart(Today(),-1)) AND [$(vCalendarField)] <= Today()-365, 1, 0) 				as [$(vCalendarField) IsPYTD]
+    	, If([$(vCalendarField)]>=(YearStart(Today(),-2)) AND [$(vCalendarField)] <= Today()-730, 1, 0) 				as [$(vCalendarField) IsPPYTD]
+        
+		//CYT12 & PYT12
+        , If([$(vCalendarField)]>=(MonthStart(TODAY(),-12)) AND [$(vCalendarField)] <= MonthEnd(TODAY(),-1), 1, 0) 		as [$(vCalendarField) IsCYT12]
+    	, If([$(vCalendarField)]>=(MonthStart(TODAY(),-24)) AND [$(vCalendarField)] <= MonthEnd(TODAY(),-13), 1, 0) 	as [$(vCalendarField) IsPYT12]
+        
+        //CM & PY
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),0)) AND [$(vCalendarField)] <= Today(), 1, 0) 					as [$(vCalendarField) IsCYCM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-1)) AND [$(vCalendarField)] <= MonthEnd(Today(),-1), 1, 0) 		as [$(vCalendarField) IsCYPM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-12)) AND [$(vCalendarField)] <= Today()-365, 1, 0) 				as [$(vCalendarField) IsPYCM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-13)) AND [$(vCalendarField)] <= MonthEnd(Today(),-1), 1, 0) 		as [$(vCalendarField) IsPYPM]
+//    	, If([$(vCalendarField) Month] = Month(Today()), 1, 0) 															as [$(vCalendarField) IsCM]
+//    	, If([$(vCalendarField) Month] = AddMonths(Today(),-1), 1, 0) 													as [$(vCalendarField) IsPM]
+//    	, If([$(vCalendarField) Month] = AddMonths(Today(),-12), 1, 0) 													as [$(vCalendarField) IsPYM]
+        
+        //CQ & PQ
+    	, IF([$(vCalendarField) Quarter] = ('Q' & ceil(month(TODAY()) / 3)), 1, 0)										as [$(vCalendarField) IsCQ]
+    	, IF([$(vCalendarField) Quarter] = ('Q' & ceil(AddMonths(TODAY(),-1) / 3)), 1, 0)								as [$(vCalendarField) IsPQ]
+    ;
+    LOAD
+     	TempDate 												as [$(vCalendarField)], 
+     	week(TempDate) 											as [$(vCalendarField) Week], 
+        WeekEnd(TempDate)										as [$(vCalendarField) WeekEnding],
+     	Year(TempDate) 											as [$(vCalendarField) Year], 
+     	Month(TempDate) 										as [$(vCalendarField) Month], 
+        NUM(Month(TempDate)) 									as [$(vCalendarField) Month Num], 
+     	Day(TempDate) 											as [$(vCalendarField) Day], 
+     	'Q' & ceil(month(TempDate) / 3) 						as [$(vCalendarField) Quarter], 
+     	Week(weekstart(TempDate)) & '-' & WeekYear(TempDate) 	as [$(vCalendarField) WeekYear], 
+     	WeekDay(TempDate) 										as [$(vCalendarField) WeekDay]
+    ;
+
+    //=== Generate a temp table of dates === 
+    LOAD 
+     	date(mindate + IterNo()) 								AS TempDate
+     	,maxdate // Used in InYearToDate() above, but not kept 
+    WHILE mindate + IterNo() <= maxdate;
+
+    //=== Get min/max dates from Field ===/
+    LOAD
+     	min(FieldValue('$(vCalendarField)', recno()))-1 		as mindate,
+     	max(FieldValue('$(vCalendarField)', recno())) 			as maxdate
+    AUTOGENERATE FieldValueCount('$(vCalendarField)');
+    
+    SET vCalendarField =;
+
+NEXT i
+
+DROP TABLE [CalendarFields];
+

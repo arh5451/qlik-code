@@ -1,0 +1,163 @@
+//List the tables you want to extract
+[ExtractTablesList]:
+LOAD * INLINE [
+TableNames
+
+]
+;
+
+/*
+AUFK
+AFKO
+AFPO
+AFVC
+AFRU
+CRHD
+KAKO
+KAKT
+PLKO
+PLAS
+PLPO
+MARA
+MAKT
+*/
+
+
+SET vMinDate = 2018;
+
+/*
+VBRK
+VBRP
+QMEL
+QMFE
+
+
+AUFK
+AFKO
+AFPO
+AUFM
+AFRU
+CAUFV
+AFVV
+AFVC
+PLPO
+KAKO
+
+*/
+
+//Perfect Conditions
+/*
+VBRK
+VBRP
+QMEL
+QMFE
+*/
+
+/*
+STKO
+STAS
+STPO
+STPU
+STZU
+*/
+//
+/*
+MBEWH
+EBEW
+EBEWH
+QBEW
+MARD
+MSKA
+MSPR
+MSKU
+MKOL
+MCHB
+MARC
+EINE
+EINA
+S032
+VBUK
+VBUP
+QMEL
+QMFE
+QMSM
+QMMA
+MARA
+MBEW
+BSEG
+
+*/
+//Connect to SAP
+LIB CONNECT TO 'SapSqlECS_bkp_20220831';
+
+//LIB CONNECT TO 'SapSqlECS';
+
+//Loop Through List of tables and store as QVD with no changes.
+FOR EACH i in FieldValueList('TableNames')
+
+    [$(i)]:
+    LOAD
+        *
+    ;
+    SQL SELECT //TOP 1
+        *
+    FROM $(i)
+    //WHERE YEAR(VFDAT) > $(vMinDate)
+    ;
+    
+    STORE * FROM [$(i)] INTO [lib://ECS-Staging_Root (staublipri_e0ahug)/StagingFinal/$(i).qvd] (qvd)
+    ;
+
+    DROP TABLE [$(i)];
+    
+NEXT i
+
+//Drop Extract Tables List
+//DROP TABLE ExtractTablesList;
+
+
+/*
+VBAK
+VBAP
+VBEP
+VBEH
+LIKP
+LIPS
+VBRK
+VBRP
+VBFA
+VBUK
+VBUP
+QMEL
+QMFE
+QMSM
+QMMA
+MARA
+MBEW
+MKPF
+MSEG
+EKKO
+EKPO
+RBKP
+RSEG
+BKPF
+BSEG
+MBEWH
+EBEW
+EBEWH
+QBEW
+MARD
+MSKA
+MSPR
+MSKU
+MKOL
+MCHB
+MARC
+EINE
+EINA
+S011
+S012
+S013
+S031
+S032
+*/

@@ -1,0 +1,213 @@
+/*
+	Currencies:
+    To convert invoices to currency of choice we need to apply Monthly FX rate based on the date the invoice is priced.
+    
+    Problem: Once we convert to statistical currency we still need to convert statistical currencies (EUR, CHF, USD) to CHF for Division total reporting.
+*/
+
+/*
+	Formula for Calculating Currency:
+    - Amount in Doc Currency
+    - KURSK = Exchange Rate for Price Determination
+    
+    <<Amount in Document Currency>>
+    *
+          IF(VBRP.KURSK > 0
+                      , VBRP.KURSK
+                      , FABS(1/VBRP.KURSK)
+                      )
+      *
+      UKURS * (IF(TFACT = 0, 1, TFACT)/IF(FFACT = 0, 1, FFACT))	//If the factor is 0 then Factor, 1 as factor 
+      )
+*/
+
+/**********************************************************************************************************************************************************
+	1. Transform TCURR with Valid From and To Dates
+*/
+	//Load the currency FX rates table
+	NoConcatenate
+    [SQL_TCURR]:
+    LOAD DISTINCT
+      MANDT																		//MANDT	CLNT	3	T000	Client	
+	, KURST																		//KURST_CURR	CHAR	4	TCURV	Exchange Rate Type	
+	, FCURR 																	//FCURR_CURR	CUKY	5	TCURC	From currency						
+	, TCURR																		//TCURR_CURR	CUKY	5	TCURC	To-currency	
+	, UKURS																		//UKURS_CURR	DEC	9(5)		Exchange Rate	EXCRT
+    //Doing this for intervalmatch FX rate to statistics currency
+    , DATE(DATE#(TEXT(99999999-NUM(GDATU)), 'YYYYMMDD'))	As [TCURR.GDATU]	//GDATU_INV	CHAR	8		Date As of Which the Exchange Rate Is Effective	INVDT
+    ;
+	LOAD
+		*
+    ;
+    SQL SELECT
+		*
+    FROM TCURR
+    WHERE KURST = 'M'		//Standard currencies
+//    	AND TCURR IN ('USD','CHF','EUR')
+    ;
+    
+	//Order the table to produce the Valid From To Ranges
+    NoConcatenate
+    [Order_TCURR]:
+    LOAD
+    	*
+    RESIDENT SQL_TCURR
+   	ORDER BY FCURR, TCURR, TCURR.GDATU desc
+    ;
+    
+	DROP TABLE SQL_TCURR;
+	
+    //Make artifical end points for interval match (Valid To's)
+    NoConcatenate
+    PrepareInterval_TCURR:
+    LOAD
+//     	  MANDT
+//  	  	  &'|'& FCURR
+// 															As [%TCURR]
+          MANDT
+		, KURST													//KURST_CURR	CHAR	4	TCURV	Exchange Rate Type	
+		, FCURR													//FCURR_CURR	CUKY	5	TCURC	From currency				
+		, TCURR													//TCURR_CURR	CUKY	5	TCURC	To-currency	
+		, UKURS													//UKURS_CURR	DEC	9(5)		Exchange Rate	EXCRT
+        , [TCURR.GDATU]
+        , DATE(TCURR.GDATU)									As [TCURR Valid From Date]
+        , DATE(IF(PREVIOUS(FCURR&TCURR) = FCURR&TCURR
+        		, PREVIOUS(TCURR.GDATU)-1
+            	, MAKEDATE(9999,12,31)
+                ))											As [TCURR Valid To Date]
+  	RESIDENT Order_TCURR
+    ;
+
+    //Add the CHF to CHF = 1, EUR to EUR = 1 etc. FX rates 
+    Concatenate(PrepareInterval_TCURR)
+    [Add_1to1_FX_Rates]:
+    LOAD DISTINCT
+//     	  MANDT
+//  	  	  &'|'& FCURR
+// 															As [%TCURR]
+		  MANDT
+        , KURST
+        , FCURR
+        , FCURR												As [TCURR]	//1-to-1
+ 		, 1													As [UKURS]
+         , MAKEDATE(1900,01,01)								As [TCURR.GDATU]
+        , MAKEDATE(1900,01,01)								As [TCURR Valid From Date]
+        , MAKEDATE(9999,12,31)								As [TCURR Valid To Date]
+    RESIDENT Order_TCURR;
+
+	DROP TABLE Order_TCURR;
+    
+        //!!!!!!!!!!!!!!!!
+    RENAME TABLE PrepareInterval_TCURR TO TCURR;
+
+
+                                                            
+/**********************************************************************************************************************************************************
+	2. Transform TCURF with Valid From and To Dates
+*/
+   	//Load the currency factors table
+	NoConcatenate
+    [SQL_TCURF]:
+    LOAD Distinct
+ 	  MANDT															//MANDT	CLNT	3	T000	Client	
+	, KURST															//KURST_CURR	CHAR	4	TCURV	Exchange Rate Type	
+	, FCURR 														//FCURR_CURR	CUKY	5	TCURC	From currency						//VBRP.STWAE Statistical Currency
+	, TCURR															//TCURR_CURR	CUKY	5	TCURC	To-currency
+	, FFACT															//FFACT_CURR	DEC	9		Ratio for the "From" Currency Units	
+	, TFACT
+    
+    //Doing this for intervalmatch FX rate to statistics currency
+    , DATE(DATE#(TEXT(99999999-NUM(GDATU)), 'YYYYMMDD'))	As [TCURF.GDATU]	//GDATU_INV	CHAR	8		Date As of Which the Exchange Rate Is Effective	INVDT
+    ;
+    SQL SELECT
+        *
+    FROM TCURF
+    WHERE KURST = 'M'		//Standard currencies
+    ;
+
+    
+// 		Order the table to produce the Valid From To Ranges
+    NoConcatenate
+    [Order_TCURF]:
+    LOAD
+    	*
+    RESIDENT SQL_TCURF
+   	ORDER BY FCURR, TCURR, TCURF.GDATU desc
+    ;
+    
+	DROP TABLE SQL_TCURF;
+	
+    //Make artifical end points for interval match (Valid To's)
+    NoConcatenate
+    PrepareInterval_TCURF:
+    LOAD
+//     	  MANDT
+//  	  	  &'|'& FCURR
+// 															As [%TCURR]
+		  MANDT
+        , KURST                                                            
+        , FCURR															//FCURR_CURR	CUKY	5	TCURC	From currency				
+		, TCURR															//TCURR_CURR	CUKY	5	TCURC	To-currency	
+        , FFACT
+        , TFACT
+        , DATE(TCURF.GDATU)									As [TCURF Valid From Date]
+        , DATE(IF(PREVIOUS(FCURR&TCURR) = FCURR&TCURR
+        		, PREVIOUS(TCURF.GDATU)-1
+            	, MAKEDATE(9999,12,31)
+                ))											As [TCURF Valid To Date]
+  	RESIDENT Order_TCURF
+    ;
+    
+    //Add the CHF to CHF = 1, EUR to EUR = 1 etc. FX rates 
+    Concatenate(PrepareInterval_TCURF)
+    [Add_1to1_FX_Rates]:
+    LOAD DISTINCT
+//     	  MANDT
+//  	  	  &'|'& FCURR
+// 															As [%TCURR]
+		  MANDT
+        , KURST                                                            
+		, FCURR																
+		, FCURR												As [TCURR]	//1-to-1                                                   
+        , 1													As [FFACT]	//FFACT_CURR	DEC	9		Ratio for the "From" Currency Units	
+		, 1													As [TFACT]
+        , MAKEDATE(1900,01,01)								As [TCURF Valid From Date]
+        , MAKEDATE(9999,12,31)								As [TCURF Valid To Date]
+    RESIDENT Order_TCURF;
+
+	DROP TABLE Order_TCURF;
+    
+    //!!!!!!!!!!!!!!!!
+    RENAME TABLE PrepareInterval_TCURF TO TCURF;
+
+//*********************************************************************************************************************************************************
+/*
+	3. Interval Match TCURF to TCURR
+*/
+	INNER JOIN(TCURR)
+	[IntervalMatch_TCURR]:
+    IntervalMatch([TCURR Valid From Date], MANDT, KURST, FCURR, TCURR)	
+    LOAD DISTINCT
+    	  [TCURF Valid From Date]
+        , [TCURF Valid To Date]
+        , MANDT
+        , KURST
+        , FCURR
+        , TCURR
+    RESIDENT TCURF
+    ;
+    
+    JOIN(TCURR)
+    LOAD
+    	*
+    RESIDENT TCURF;
+    
+    DROP TABLE TCURF;
+
+//*********************************************************************************************************************************************************
+/*
+	5. Store the tables
+*/    
+ 	STORE * FROM  TCURR INTO [lib://ECS-Staging_Root (staublipri_e0ahug)/StagingFinal/Currency_TCURR_020.qvd] (qvd);
+    
+//*********************************************************************************************************************************************************

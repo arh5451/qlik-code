@@ -1,0 +1,57 @@
+/*
+	Parameters Sub: Create a string from parameters and parameter values in table
+    1. Loop through the expansion hyperlinks
+    2. Create a comma seperated list of expansions
+    3. Make the parameter expand = comma seperated list
+    
+    1. Loop through Inline Table Parameters 
+    2. Create a string with '&' between each parameter
+    3. Set the string equal to variable 'params'
+*/
+
+SUB Parameters;
+
+//Embedded Links
+IF NoOfRows('expand') > 0 THEN
+    
+    SET expand = ;
+
+    Let vNoOfRows = NoOfRows('expand');
+
+    FOR i=0 to $(vNoOfRows)-1
+        LET expand = '$(expand)' & peek('Value',$(i),'expand') & IF($(i)=$(vNoOfRows)-1,NULL(),',');		//Really Long Comma Seperated String
+    NEXT i; 
+    
+	DROP TABLE expand;
+    
+    //LET expand =;
+    
+    TRACE Created the Expand Parameter: $(expand);
+    
+ELSE
+    TRACE No Expand Parameter Created;
+END IF
+
+//Parameters
+IF NoOfRows('Parameters') > 0 OR len('$(expand)') > 0 THEN
+    
+    SET params = ;
+
+    Let vNoOfRows = NoOfRows('Parameters');
+
+    FOR i=0 to $(vNoOfRows)-1
+        LET params = '$(params)' & peek('Parameter',$(i),'Parameters') &'='& peek('Value',$(i),'Parameters') & IF($(i)=$(vNoOfRows)-1,NULL(),'&');	//Parameter = ParameterValue
+    NEXT i; 
+    
+	DROP TABLE Parameters;
+    
+    //LET params = '$(expand)' & '$(params)';
+	LET expand =;
+    
+    TRACE Created the Parameters String: $(params);
+	
+ELSE
+    TRACE No Parameters Created;
+END IF
+
+END SUB;

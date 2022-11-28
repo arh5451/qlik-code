@@ -1,0 +1,28 @@
+//Incremental load the table
+
+SUB Incremental(Table)
+//Load all records which haven't changed
+[$(Table)]:
+LOAD
+	*
+From [$(QVDStoreLocation)$(Table).qvd] (qvd) //From QVD
+WHERE NOT EXISTS(id);
+
+//Insert + Delete 
+//Concatenate results (changed records) not deleted (incremental records only added)
+
+Concatenate($(Table))
+LOAD
+	*
+RESIDENT results
+WHERE [isDeleted] = 'False';
+
+DROP TABLE results;
+
+//Rename Fields Sub?!?!
+//CALL RenameFields;
+
+//Overwrite original table
+Store Table into '$(QVDStoreLocation)$(Table).qvd' (qvd);
+
+END SUB

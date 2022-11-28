@@ -1,0 +1,93 @@
+//Logging SUBS
+// ---------------------------------------------- Request Log ---------------------------------------------
+// Call before load time
+Sub RequestStartTime
+	Let vStartTime = num(now());
+End Sub;
+
+// Sub to calculate time in Load
+
+// Sub timeCalculate(vStartTime,vEndTime,vTableName,vMessage)
+
+Sub RequestTimeCalculate
+     Let vEndTime = num(now());
+//     SET vTimeTake=;
+     LET vTimeTake = INTERVAL(($(vEndTime) - $(vStartTime)),'hh:mm:ss.fff');
+     
+     TRACE Endpoint RunTime: $(vTimeTake);
+     
+     // LOG Table Writing
+     EndPointMetaData:
+     Load
+		  now(1) 						as TimeStamp
+		, '$(endpoint)' 				as Endpoint
+		, '$(vTimeTake)'  				as LoadTime
+        , '$(vFieldValueCount)'			as NumberofRecords
+        , '$(baseurl)$(endpoint)?$(params)' as Request
+//		, '$(vMessage)'  	as LogMessage
+     AutoGenerate 1;   
+
+     // Initlize the variables
+     SET vStartTime=;
+     SET vEndTime=;
+     SET vTimeTake=;
+End Sub;
+
+// Call before load time
+Sub RequestStartTime
+	Let vStartTime = num(now());
+End Sub;
+
+// ---------------------------------------------- Page Log ---------------------------------------------
+// Call before load time
+Sub PageStartTime
+	Let vPageStartTime = num(now());
+End Sub;
+
+//Page Time Calculate
+Sub PageTimeCalculate
+     Let vPageEndTime = num(now());
+//     SET vTimeTake=;
+     LET vPageTimeTake = INTERVAL(($(vPageEndTime) - $(vPageStartTime)),'hh:mm:ss.fff');
+     
+     TRACE Endpoint RunTime: $(vTimeTake);
+     
+     // LOG Table Writing
+     PageMetaData:
+     Load
+		  TimeStamp(now(1),'hh:mm:ss.fff')			as [Page TimeStamp]
+		, '$(endpoint)' 							as Endpoint
+		, '$(page)'									as [Page Number]
+		, '$(vPageTimeTake)'  						as [Page LoadTime]
+        , '$(RecordCount)'							as [Page NumberofRecords]
+        , '$(baseurl)$(endpoint)?page=$(page)&size=$(size)$(params)' 					as [Page Request]        
+//		, '$(vMessage)'  							as LogMessage
+     AutoGenerate 1;   
+        
+     // Initlize the variables
+     SET vPageStartTime=;
+     SET vPageEndTime=;
+     SET vPageTimeTake=;
+End Sub;
+
+// ---------------------------------------------- Write Log ---------------------------------------------
+Sub LogWrite
+
+    // Store and Reload Log File
+    
+   	Trace Storing metadata file into $(log_location)log.txt;
+    
+    IF NoOfRows('EndPointMetaData') > 0 THEN
+    	Store EndPointMetaData into [$(log_location)log.txt](txt);
+    ELSE
+    	Trace No EndPointMetaData Table Found;
+    ENDIF
+    
+    IF NoOfRows('PageMetaData') > 0 THEN
+    	Store PageMetaData into [$(log_location)paginatedlog.txt](txt);
+	ELSE
+    	Trace No PageMetaData Table Found;
+    END IF
+    
+//    DROP Table Log;
+End Sub;

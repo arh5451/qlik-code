@@ -1,0 +1,83 @@
+SUB PaginatedRequest(a, b, c)
+
+SET endpoint = $(a);
+SET params = $(b);
+
+SET code = $(c);//REPLACE('$(a)','/','.');
+
+/*Request
+	1. Set endpoint to request
+    2. Set parameters to request
+    3. Call the Parameters Sub to build Params string
+    4. Start the request
+    5. Close Variables
+*/
+
+//Get the # of pages for this request using the parameters from above.
+CALL GetPages('$(endpoint)', '$(params)');
+
+//Start Request
+
+TRACE --------------->
+Sent PaginatedRequest: $(baseurl)$(endpoint)
+Params: $(params)
+---------------;
+
+//Meta Data
+Call RequestStartTime;	//Table Load Start Time
+
+TRACE 
+********
+Start Pagination loop
+updatedSince: $(vTimeStamp)
+********
+;
+
+Do While page < totalPages
+	
+	TRACE Page: $(page);
+    
+	Call PageStartTime;
+
+	$(REST_$(code))
+    $(vRESTConnection($(baseurl),$(endpoint),?page=$(page)&size=$(size)$(params)))
+    ;
+	
+    $(SQL_$(code))
+       
+    //Meta Data Section
+	Call PageTimeCalculate;
+
+    LET page = $(page) + 1;
+
+	LET RecordCount = FieldValueCount('$(code)id');
+	TRACE RecordCount: $(RecordCount);
+    
+LOOP
+
+//Load Meta Data
+Call RequestTimeCalculate;
+
+LET vFieldValueCount = FieldValueCount('$(code)id');
+TRACE <---------------
+PaginatedRequest Returned: $(vFieldValueCount)
+---------------;
+
+//Close variables
+LET RESTcode =;
+LET SQLcode =;
+
+LET endpoint = ;
+LET params = ;
+
+LET page =;
+LET totalPages =;
+
+LET code =;
+LET RecordCount =;
+
+LET a =;
+LET b =;
+LET c =;
+
+END SUB

@@ -1,0 +1,62 @@
+SUB Request(a, b ,c)
+
+SET endpoint = $(a);
+SET params = $(b);
+
+SET code = $(c);//REPLACE('$(a)','/','.');
+
+/*Request
+	1. Set endpoint to request
+    2. Set parameters to request
+    3. Call the Parameters Sub to build Params string
+    4. Start the request
+    5. Close Variables
+*/
+
+// //Create Parameters set into variable params
+// Call Parameters;
+
+//Start Request
+
+TRACE --------------->
+Sent Request: $(baseurl)$(endpoint)
+Params: $(params)
+---------------;
+
+//Meta Data
+Call RequestStartTime;	//Table Load Start Time
+
+$(REST_$(code))
+$(vRESTConnection($(baseurl),$(endpoint),?$(params)))
+;    
+
+//$(SQL_$(code))
+
+LET RecordCount = FieldValueCount('$(code)id');
+TRACE RecordCount: $(RecordCount);
+
+//Load Meta Data
+Call RequestTimeCalculate;
+
+LET vFieldValueCount = FieldValueCount('$(code)id');
+
+TRACE 
+<---------------
+Request Returned: $(vFieldValueCount)
+---------------
+;
+
+//Close variables
+LET RESTcode =;
+//LET SQLcode =;
+
+LET endpoint = ;
+//LET params = ;		//Moving this out so that we can do loops easier
+
+//LET code =;
+
+LET a =;
+LET b =;
+LET c =;
+
+END SUB

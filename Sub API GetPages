@@ -1,0 +1,67 @@
+/*
+	Sub script gets pages
+    
+    Note: Currently hard code to try 100 per page first.
+*/
+
+SUB GetPages(a, b)
+
+SET endpoint = $(a);
+SET params = $(b);
+
+TRACE 
+--------------->
+Sent GetPages Request: $(baseurl)$(endpoint)
+Params: $(params)
+---------------;
+
+RestConnectorMasterTable:
+SQL SELECT 
+	"__KEY_root",
+	(SELECT 
+		"size",
+		"totalElements",
+		"totalPages",
+		"number",
+		"__FK_page"
+	FROM "page" FK "__FK_page")
+FROM JSON (wrap on) "root" PK "__KEY_root"
+$(vRESTConnection($(baseurl),$(endpoint),?size=100&$(params)))				//Defaulting to 100 whenever possible otherwise the lazy request should return 50 if its not possible.
+;
+
+[page]:
+LOAD	
+	[size],
+	[totalElements],
+	[totalPages],
+	[number],
+	[__FK_page] AS [__KEY_root]
+RESIDENT RestConnectorMasterTable
+WHERE NOT IsNull([__FK_page]);
+
+DROP TABLE RestConnectorMasterTable;
+
+LET page = PEEK('number',0,'page');				//StartPage
+LET totalPages = PEEK('totalPages',0,'page');	//totalPages
+LET totalElements = PEEK('totalElements',0,'totalElements');	//totalElements
+LET size = PEEK('size',0,'page');	//size
+
+DROP TABLE page;
+
+//Pagination Message
+
+TRACE
+<--------------
+GetPages Returned:
+Pagination
+page: $(page)
+totalPages: $(totalPages)
+totalElements: $(totalElements)
+size: $(size)
+--------------
+;
+
+LET a =;
+LET b =;
+
+END SUB

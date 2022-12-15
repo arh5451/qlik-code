@@ -1,0 +1,73 @@
+/*
+	Invoice Billing Date Calendar
+/*
+	Calendars for :
+	Invoice Billing Date
+*/
+NoConcatenate
+[CalendarFields]:
+LOAD * INLINE [
+CalendarFields
+%Date
+]
+;
+
+FOR EACH i in FieldValueList('CalendarFields')
+
+	SET vCalendarField = $(i);
+    
+    [Calendar $(vCalendarField)]:
+    LOAD
+    	*
+        //CYTD & PYTD
+    	, If([$(vCalendarField)]>=(YearStart(Today(),0)) AND [$(vCalendarField)] <= Today(), 1, 0) 						  as [$(vCalendarField) IsCYTD]
+    	, If([$(vCalendarField)]>=(YearStart(Today(),-1)) AND [$(vCalendarField)] <= Today()-365, 1, 0) 				as [$(vCalendarField) IsPYTD]
+    	, If([$(vCalendarField)]>=(YearStart(Today(),-2)) AND [$(vCalendarField)] <= Today()-730, 1, 0) 				as [$(vCalendarField) IsPPYTD]
+        
+		//CYT12 & PYT12
+        , If([$(vCalendarField)]>=(MonthStart(TODAY(),-12)) AND [$(vCalendarField)] <= MonthEnd(TODAY(),-1), 1, 0) 		as [$(vCalendarField) IsCYT12]
+    	, If([$(vCalendarField)]>=(MonthStart(TODAY(),-24)) AND [$(vCalendarField)] <= MonthEnd(TODAY(),-13), 1, 0) 	  as [$(vCalendarField) IsPYT12]
+        
+        //CM & PY
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),0)) AND [$(vCalendarField)] <= Today(), 1, 0) 					        as [$(vCalendarField) IsCYCM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-1)) AND [$(vCalendarField)] <= MonthEnd(Today(),-1), 1, 0) 		as [$(vCalendarField) IsCYPM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-12)) AND [$(vCalendarField)] <= Today()-365, 1, 0) 				    as [$(vCalendarField) IsPYCM]
+    	, If([$(vCalendarField)]>=(MonthStart(Today(),-13)) AND [$(vCalendarField)] <= MonthEnd(Today(),-1), 1, 0) 		as [$(vCalendarField) IsPYPM]
+//    	, If([$(vCalendarField) Month] = Month(Today()), 1, 0) 															    as [$(vCalendarField) IsCM]
+//    	, If([$(vCalendarField) Month] = AddMonths(Today(),-1), 1, 0) 													as [$(vCalendarField) IsPM]
+//    	, If([$(vCalendarField) Month] = AddMonths(Today(),-12), 1, 0) 													as [$(vCalendarField) IsPYM]
+        
+        //CQ & PQ
+    	, IF([$(vCalendarField) Quarter] = ('Q' & ceil(month(TODAY()) / 3)), 1, 0)										  as [$(vCalendarField) IsCQ]
+    	, IF([$(vCalendarField) Quarter] = ('Q' & ceil(AddMonths(TODAY(),-1) / 3)), 1, 0)								as [$(vCalendarField) IsPQ]
+    ;
+    LOAD
+     	TempDate 												                        as [$(vCalendarField)], 
+     	week(TempDate) 											                    as [$(vCalendarField) Week], 
+        WeekEnd(TempDate)									                    as [$(vCalendarField) WeekEnding],
+     	Year(TempDate) 											                    as [$(vCalendarField) Year], 
+     	Month(TempDate) 										                    as [$(vCalendarField) Month], 
+        NUM(Month(TempDate)) 							                    as [$(vCalendarField) Month Num], 
+     	Day(TempDate) 											                    as [$(vCalendarField) Day], 
+     	'Q' & ceil(month(TempDate) / 3) 		                    as [$(vCalendarField) Quarter], 
+     	Week(weekstart(TempDate)) & '-' & WeekYear(TempDate) 	  as [$(vCalendarField) WeekYear], 
+     	WeekDay(TempDate) 									                    as [$(vCalendarField) WeekDay]
+    ;
+
+    //=== Generate a temp table of dates === 
+    LOAD 
+     	date(mindate + IterNo()) 								AS TempDate
+     	,maxdate // Used in InYearToDate() above, but not kept 
+    WHILE mindate + IterNo() <= maxdate;
+
+    //=== Get min/max dates from Field ===/
+    LOAD
+     	min(FieldValue('$(vCalendarField)', recno()))-1 		as mindate,
+     	max(FieldValue('$(vCalendarField)', recno())) 			as maxdate
+    AUTOGENERATE FieldValueCount('$(vCalendarField)');
+    
+    SET vCalendarField =;
+
+NEXT i
+
+DROP TABLE [CalendarFields];

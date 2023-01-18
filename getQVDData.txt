@@ -1,0 +1,56 @@
+Sub DoDir(Root)
+// ------------------------
+//	For each Ext in 'qvd'
+// ------------------------	
+	For each File in Filelist (Root&'\*.qvd')
+		Main:		
+			Load Name, FileSize(Name) as Size, FileTime(Name) as FileTime;
+			Load * Inline "
+			Name
+			$(File) ";
+
+			//========== generic head of meta collector ==========
+			main:
+
+			QvdTableHeader:
+				LOAD FilePath(FileName()) as Name, *;
+				LOAD QvBuildNo,
+   					 CreateUtcTime,
+    				 SourceFileSize,
+    				 FileName()     as QVDFileName,
+    				 '$(FolderName)'  as QVDFolder,
+    				 TableName,
+    				 RecordByteSize,
+    				 NoOfRecords,
+    				 Offset,
+    				 Length
+				FROM $(File)(XmlSimple, Table is [QvdTableHeader]);
+
+			//=========== qvd source of meta ---xml header ========
+			LOAD FilePath(FileName()) as Name, *;
+			QvdFieldHeader:
+				LOAD FieldName,
+   	 				 BitOffset,
+    				 BitWidth,
+    				 Bias,
+    				 NoOfSymbols,
+    				 Offset as HeaderOffset,
+    				 Length as HeaderLength,
+    				 [NumberFormat/Type] as Type,
+    				 [NumberFormat/nDec] as nDec,
+    				 [NumberFormat/UseThou] as UseThou,
+    				 [NumberFormat/Fmt] as Fmt,
+    				 [NumberFormat/Dec] as Dec
+				FROM $(File)(XmlSimple, Table is [QvdTableHeader/Fields/QvdFieldHeader]);
+
+				// ------------------------------------
+				// Get the number of columns manually
+				// ------------------------------------
+				LOAD
+					Name,
+					count(distinct FieldName ) as NoColumns
+				resident QvdFieldHeader
+			    group by Name;
+	Next File
+
+End sub

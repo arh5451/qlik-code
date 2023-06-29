@@ -1,0 +1,7 @@
+$(Must_Include=https://github.com/RobWunderlich/Qlikview-Components/releases/download/v11.1/Qvc.qvs);
+ CALL Qvc.ExportModel
+ CALL Qvc.Cleanup
+
+$(Must_Include=lib://QvcWeb);
+ Call Qvc.ExportModel('lib://QVData')
+ CALL Qvc.Cleanup;

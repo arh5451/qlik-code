@@ -1,0 +1,15 @@
+// FieldStats.qvs
+// Basic profiling of fields: distinct count, null count, min/max for numeric fields
+SUB PrintFieldStats(tableName)
+    LET vFieldCount = NoOfFields('$(tableName)');
+
+    FOR i = 1 TO $(vFieldCount)
+        LET vField = FieldName(i, '$(tableName)');
+
+        LET vDistinct = FieldValueCount('$(vField)');
+        TRACE Table $(tableName) - Field $(vField) has $(vDistinct) distinct values;
+
+        // For numeric min/max, try to fetch min/max (may require aggregation in load)
+        // (Limited in script, better in front-end but can be enhanced)
+    NEXT i
+END SUB

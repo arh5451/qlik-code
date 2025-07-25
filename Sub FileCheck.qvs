@@ -1,0 +1,8 @@
+// FileCheck.qvs
+SUB CheckFileExists(filePath)
+    IF NOT FileSize('$(filePath)') > 0 THEN
+        TRACE WARNING: File not found or empty - $(filePath);
+    ELSE
+        TRACE File exists - $(filePath);
+    ENDIF
+END SUB

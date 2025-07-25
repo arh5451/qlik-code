@@ -1,0 +1,141 @@
+/*
+
+                Load Unique List of FieldValues Quicker.
+
+                - Can be used with Calendar Scripts or WHERE EXIST()   
+
+*/
+
+                NoConcatenate
+
+                [PrimaryKeyList]:
+
+    LOAD
+
+                FieldValue('Name',RecNo())        As PrimaryKeyList
+
+    AUTOGENERATE FieldValueCount('Name')
+
+    ;
+
+   
+
+    EXIT SCRIPT;
+
+Incremental QVD LOAD
+
+/*
+
+Insert, Update, Delete
+
+*/
+
+SET vToday = MAKEDATE(2022,09,22)+2;
+
+SET vFileName = ;
+
+​
+
+Let ThisExecTime = $(vToday);
+
+​
+
+//Check if file exists
+
+IF
+
+NOT IsNull(QvdCreateTime('lib://00-StagingPoolFinal (informatec_shp)/NameTable.qvd'))
+
+//If it exists then Incremental Insert, Update, Delete
+
+THEN
+
+//Load the modified records
+
+NoConcatenate
+
+Qlik_Table:
+
+LOAD
+
+PrimaryKey
+
+, Name
+
+, FavoriteColor
+
+RESIDENT NameTable //Query SQL
+
+WHERE ModificationDate >= $(LastExecTime)
+
+AND ModificationDate < $(ThisExecTime);
+
+//Concatenate existing records to modified records
+
+Concatenate(Qlik_Table)
+
+LOAD
+
+PrimaryKey
+
+, Name
+
+, FavoriteColor
+
+From [lib://00-StagingPoolFinal (informatec_shp)/NameTable.QVD] (qvd) //From QVD
+
+WHERE NOT EXISTS(PrimaryKey);
+
+​
+
+//Deletes records from existing records qvd via Inner Join
+
+Inner Join(Qlik_Table)
+
+LOAD
+
+PrimaryKey
+
+Resident NameTable //Query SQL
+
+;
+
+//Catch statement to prevent store if error
+
+If ScriptErrorCount = 0 then
+
+​
+
+STORE Qlik_Table INTO [lib://00-StagingPoolFinal (informatec_shp)/NameTable.QVD] (qvd);
+
+Let LastExecTime = ThisExecTime;
+
+END IF
+
+​
+
+//First Store of table
+
+ELSE
+
+STORE NameTable INTO [lib://00-StagingPoolFinal (informatec_shp)/NameTable.QVD] (qvd)
+
+;
+
+/*
+
+Drop tables to mimic as if we only made a query
+
+*/
+
+​
+
+DROP TABLES
+
+NameTable
+
+, HouseTable
+
+;
+
+​

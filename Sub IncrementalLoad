@@ -1,0 +1,59 @@
+// IncrementalLoadSub.qvs
+SUB IncrementalLoad (
+    vSourceTableName,      // Name of the resident or source table to load from (e.g. SQL resident)
+    vTargetTableName,      // Name of the internal Qlik table to load/update
+    vQvdPath,              // Full QVD file path for storing incremental data
+    vKeyField,             // Primary key field name (e.g. PrimaryKey)
+    vModDateField,         // Modification date field name (e.g. ModificationDate)
+    vLastExecTime,         // Last execution time variable name (e.g. LastExecTime)
+    vThisExecTime          // Current execution time variable name (e.g. ThisExecTime)
+)
+    TRACE Starting incremental load for $(vTargetTableName);
+
+    // Check if QVD exists
+    IF NOT IsNull(QvdCreateTime('$(vQvdPath)')) THEN
+
+        // Load changed records from source table
+        NoConcatenate
+        $(vTargetTableName):
+        LOAD *
+        RESIDENT [$(vSourceTableName)]
+        WHERE $(vModDateField) >= $(=$(vLastExecTime))
+          AND $(vModDateField) <  $(=$(vThisExecTime));
+
+        // Concatenate unchanged records from existing QVD, avoiding duplicates
+        CONCATENATE ($(vTargetTableName))
+        LOAD *
+        FROM [$(vQvdPath)] (qvd)
+        WHERE NOT EXISTS ([$(vKeyField)]);
+
+        // Remove deleted records by inner joining with current source table keys
+        INNER JOIN ($(vTargetTableName))
+        LOAD [$(vKeyField)]
+        RESIDENT [$(vSourceTableName)];
+
+        // Store updated QVD only if no errors
+        IF ScriptErrorCount = 0 THEN
+            STORE $(vTargetTableName) INTO [$(vQvdPath)] (qvd);
+            LET $(vLastExecTime) = $(vThisExecTime);
+            TRACE Incremental load complete: QVD stored and last execution time updated;
+        ELSE
+            TRACE ERROR: Script error detected - QVD NOT stored;
+        ENDIF
+
+    ELSE
+        // First run: full load
+        TRACE QVD not found. Doing full load for $(vTargetTableName);
+        $(vTargetTableName):
+        LOAD *
+        RESIDENT [$(vSourceTableName)];
+
+        STORE $(vTargetTableName) INTO [$(vQvdPath)] (qvd);
+        LET $(vLastExecTime) = $(vThisExecTime);
+    ENDIF
+
+    // Clean up
+    DROP TABLES $(vTargetTableName), $(vSourceTableName);
+
+    TRACE Incremental load subroutine finished for $(vTargetTableName);
+END SUB

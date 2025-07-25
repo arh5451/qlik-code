@@ -1,0 +1,15 @@
+// LoadTimeLogger.qvs
+// Logs load start, end time and duration
+
+SUB LogLoadTime(tableName)
+    LET vStartTime = Now();
+    TRACE Starting load of $(tableName) at $(vStartTime);
+
+    // Your load logic here...
+
+    LET vEndTime = Now();
+    TRACE Completed load of $(tableName) at $(vEndTime);
+
+    LET vDuration = Timestamp($(vEndTime) - $(vStartTime));
+    TRACE Duration: $(vDuration);
+END SUB

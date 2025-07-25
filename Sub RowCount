@@ -1,0 +1,5 @@
+// RowCount.qvs
+SUB PrintTableRowCount(tableName)
+    LET vRowCount = NoOfRows('$(tableName)');
+    TRACE Table $(tableName) has $(vRowCount) rows loaded;
+END SUB

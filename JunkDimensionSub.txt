@@ -1,0 +1,115 @@
+/*
+Goal of Sub Script: Calling the subscript creates a junk dimensions table with all of the fields from the fact table listed in the subscript. 
+By listsing the fields with low cardinality and moving them to a junk dims table you can reduce the size of the in memory footprint of your applications without sacrificing in application performance.
+Additionally, creates a Tables_Field_Utility which helps identify potential target fields with low cardinality.
+
+Change Log:
+v1.00 Andrew Hughes - 6/25/2021 - First Build of sub script
+*/
+
+Sub CreateJunkDimension(vFactTableName, vJunkFields)
+
+	//Generate Utility table to show # of distinct values in every field 
+		// Generate a unique value for use in names 
+		LET vUnique = timestamp(now(1),'YYYYMMDDhhmmss');
+		
+		FOR vTableIdx = NoOfTables()-1 to 0 STEP-1
+			LET vTable = TableName($(vTableIdx));
+			
+			FOR vFieldIdx = 1 to NoOfFields('$(vTable)')
+				LET vFieldName = FieldName($(vFieldIdx),'$(vTable)');
+				
+				// Tables_Field table requires a unique name in case the target qvw has a table of this name.
+				Tables_Field_$(vUnique):	
+				LOAD
+		//			'$(vDocumentKey)' & '$(vTable)' as %KeyTableName,
+		//			'$(vDocumentKey)' & '$(vFieldName)' as %KeyFieldName,
+					'$(vTable)' as TableName,
+					'$(vFieldName)' as FieldName,
+					FieldValueCount('$(vFieldName)') As #DistinctValues
+					
+				AutoGenerate 1;	
+					
+			NEXT vFieldIdx
+		
+//			DROP TABLE [$(vTable)];
+		NEXT vTableIdx
+		
+		// Remove the unique prefix
+		RENAME TABLE Tables_Field_$(vUnique) TO Tables_Field_Utility;
+		
+		
+	//Create Junk Dimendsion
+
+		LET vTableName = '$(vFactTableName)';
+		
+		NoConcatenate
+		[CandidateJunkFields]:
+		LOAD
+			TRIM(SubField('$(vJunkFields)',',')) As [JunkFields]
+		AutoGenerate(1);
+		
+	/*
+		1. Iterate through all the fields listed in the sub attribute vJunkFields
+		2. Generate script to load those fields as a list 			  --> vList
+		3. Generate script to load those fields as a concatenated key --> vKey
+		4. Load the junk Dimension table, Load the DIM_JUNK_vTableName 
+		5. Left Join the Concatenated Key to the Fact Table (autonumbered key), Left Join the %KEY_DIM_JUNK_vTableName 
+		6. Drop the junk dimensions from the fact table
+	*/
+		
+		SET vList=;
+		SET vKey=;
+		SET vComma=;
+		SET vDelimiter=;
+		LET vSingleQuote = chr(39);
+			
+		FOR Each f in FieldValueList('JunkFields')
+		
+				LET vFieldName = '$(f)';
+			
+		    	LET vList = '$(vList)' & '$(vComma)' & '[$(vFieldName)]';										//Creating list of junk dim fields
+		    	
+		    	LET vKey = '$(vKey)' & '$(vDelimiter)' & '[$(vFieldName)]';
+		    	
+		    	SET vComma = ',';
+		    	
+		    	SET vDelimiter = '&$(vSingleQuote)|$(vSingleQuote)&';											//Adding | delimiter and single quotes via variables so it doesn't interpret them until execution
+		  	
+			SET vFieldName=;
+		
+		NEXT f
+		
+		NoConcatenate
+			[DIM_JUNK_$(vTableName)]:
+		  	LOAD Distinct
+		  		//  $(vKey)							As [%KEY_DIM_JUNK_$(vTableName)]
+		  		 AutoNumberHash128($(vList))		As [%KEY_DIM_JUNK_$(vTableName)]
+		  		, $(vList)
+			RESIDENT [$(vTableName)]
+			;
+			
+			//Join the Junk Dimension Key to the Fact Table
+			
+			LEFT JOIN([$(vTableName)])
+			LOAD Distinct
+				//$(vKey) 							As [%KEY_DIM_JUNK_$(vTableName)]
+				 AutoNumberHash128($(vList))		As [%KEY_DIM_JUNK_$(vTableName)]
+				, $(vList)
+			RESIDENT [$(vTableName)];
+			
+			//Drop the junk dimension fields from the fact table
+			
+			DROP FIELDS $(vList) FROM [$(vTableName)];
+			
+			DROP TABLE CandidateJunkFields;
+			
+		SET vTableName=;
+		SET vList=;
+		SET vComma=;
+
+end sub
+
+Call CreateJunkDimension('SampleData','Item Color, Delivery Flag, Canceled Flag');
+
+Exit Script;
